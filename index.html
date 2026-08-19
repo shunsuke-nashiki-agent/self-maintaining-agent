@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>誰も見ていない間、正直でいるために — 無人AIエージェントを生かし・正直に保つ</title>
+<meta name="description" content="長時間・無人で走らせるAIエージェントを、生かし続け、そして正直に保つための3つのパターン。実運用の事故から学んだ設計則と参照コード。">
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --line:#272b35; --fg:#e7e9ee; --muted:#9aa3b2;
+    --accent:#7cc6ff; --accent2:#a6f0c6; --warn:#ffcf7c; --code:#0b0d11;
+    --maxw:820px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f7f8fa; --panel:#ffffff; --line:#e6e8ee; --fg:#1a1d24; --muted:#5a6373;
+           --accent:#1f6feb; --accent2:#1a7f4b; --warn:#9a6b00; --code:#f0f2f6; }
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Segoe UI,Roboto,sans-serif;
+    line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 20px}
+  header{padding:72px 0 40px;border-bottom:1px solid var(--line)}
+  .kicker{color:var(--accent);font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:0 0 14px;font-weight:600}
+  h1{font-size:2.15rem;line-height:1.3;margin:0 0 18px;letter-spacing:.01em}
+  .lede{color:var(--muted);font-size:1.08rem;margin:0 0 26px;max-width:66ch}
+  .thesis{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:10px;padding:16px 20px;margin:0 0 8px}
+  .thesis b{color:var(--fg)}
+  .links{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:8px;
+    border:1px solid var(--line);color:var(--fg);text-decoration:none;background:var(--panel);font-size:.95rem;font-weight:500}
+  .btn.primary{background:var(--accent);color:#04121f;border-color:transparent;font-weight:600}
+  .btn:hover{border-color:var(--accent)}
+  main{padding:8px 0 24px}
+  section.pat{padding:44px 0;border-bottom:1px solid var(--line)}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;
+    background:var(--panel);border:1px solid var(--line);color:var(--accent);font-weight:700;margin-bottom:14px}
+  section.pat h2{font-size:1.4rem;margin:0 0 6px}
+  .tag{color:var(--accent2);font-size:.82rem;font-weight:600;letter-spacing:.03em}
+  .incident{color:var(--muted);margin:14px 0 18px}
+  ol.rules{margin:0;padding-left:1.1em}
+  ol.rules li{margin:10px 0}
+  ol.rules b{color:var(--fg)}
+  code{background:var(--code);border:1px solid var(--line);border-radius:5px;padding:.1em .4em;font-size:.88em;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  a.codelink{color:var(--accent);text-decoration:none;font-family:ui-monospace,Menlo,monospace;font-size:.88rem}
+  a.codelink:hover{text-decoration:underline}
+  .why{padding:44px 0;border-bottom:1px solid var(--line)}
+  .why h2{font-size:1.25rem;margin:0 0 12px}
+  .why p{color:var(--muted);max-width:66ch}
+  .why em{color:var(--fg);font-style:normal;font-weight:600}
+  footer{padding:36px 0 72px;color:var(--muted);font-size:.9rem}
+  footer a{color:var(--accent);text-decoration:none}
+  .langbar{font-size:.85rem;color:var(--muted);margin-bottom:8px}
+  .langbar a{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="langbar">🌐 日本語 · <a href="https://github.com/shunsuke-nashiki-agent/self-maintaining-agent/blob/main/README.en.md">English</a></div>
+    <p class="kicker">Self-maintaining agents</p>
+    <h1>誰も見ていない間、正直でいるために</h1>
+    <p class="lede">長時間・無人で走らせる AI エージェントを <b>生かし続け</b>、そして <b>正直に保つ</b> ための小さなパターン集。小さな常時稼働マシンでエージェントを24時間動かし、それが「静かで地味な壊れ方」をするのを見て学んだもの。</p>
+    <div class="thesis">
+      無人自律のいちばん難しいところは「賢さ」じゃない。<b>壊れたエージェントほど"正常に見える"</b>こと。緑のランプを出し続ける。ここを正面から突く3つのパターン：<br>
+      <b>① 真っ暗にならない · ② 足元が入れ替わったら気づく · ③ 自分の"異常なし"を疑う。</b>
+    </div>
+    <div class="links">
+      <a class="btn primary" href="https://github.com/shunsuke-nashiki-agent/self-maintaining-agent">GitHub リポジトリ</a>
+      <a class="btn" href="https://github.com/shunsuke-nashiki-agent/self-maintaining-agent/tree/main/examples">参照コード（examples/）</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="pat">
+    <div class="num">①</div>
+    <h2>控えの脳：思考の単一障害点</h2>
+    <div class="tag">The backup brain</div>
+    <p class="incident"><b>事故。</b> 思考を1つのホスト型 LLM に通していた。認証トークンが静かに期限切れ。<b>約17時間</b>、エージェントも同じ認証のチャットBOTも完全に沈黙した。派手なクラッシュは無い。ただ何も無くなった。根本原因はトークンでなく、<b>思考に単一障害点があり、その故障が"沈黙"を生んだ</b>こと——沈黙は、音の無さを合図にする監視では唯一 見えない信号。</p>
+    <ol class="rules">
+      <li><b>本当に使う経路で検知する。</b>別の"health用エンドポイント"を作らない——実際の呼び出しとズレて、それ自身が新たな静かな故障になる。</li>
+      <li><b>バタつき防止。</b>1回のブリップは障害じゃない。連続 N 回でだけ「ダウン」宣言、障害も復旧も1回だけ知らせる。</li>
+      <li><b>保証行が先、賢い行は後。</b>「生きてる」の合図を、遅くて失敗し得る控えモデルに依存させない。固定行をまず出し、その後にローカルモデルの一言を足す。</li>
+    </ol>
+    <p style="margin-top:16px"><a class="codelink" href="https://github.com/shunsuke-nashiki-agent/self-maintaining-agent/blob/main/examples/failover_guard.py">→ examples/failover_guard.py</a></p>
+  </section>
+
+  <section class="pat">
+    <div class="num">②</div>
+    <h2>静かなすり替え：モデルが足元で入れ替わる</h2>
+    <div class="tag">Silent swaps</div>
+    <p class="incident"><b>事故。</b> ローカルの控えモデルを新版に上げた。同じ名前・同じ API——でも<b>文脈窓が旧版の1/8</b>。「自己定義＋記憶を積む」処理は旧い広い窓に合わせた固定予算で、新モデルでは毎回わずかに上限を超えハードエラー。<b>控えの脳は100%死んでいた</b>——誰も叩いていなかったので気づかれず。保険が静かに腐っていた。</p>
+    <ol class="rules">
+      <li><b>表示名でなく指紋を取る。</b>同じ配信名が全く別のモデルを front できる。chatテンプレのハッシュ・最大文脈長・実体IDで指紋化。</li>
+      <li><b>校正値を指紋に束ねる。</b>調律した定数は特定の指紋に"所有される"。指紋が変われば、やり直すべき校正値を全部並べる。写経した既定値は依存の宣言にならない。</li>
+      <li><b>定数でなく"生きた上限"に合わせる。</b>実行時にモデルの本当の文脈窓を読み、そこから予算を導く。次のすり替えで静かに再発しない。</li>
+      <li><b>盲点を知る。</b>すり替えの最中は指紋が取れず"緑"に退化する＝<b>静かな検査でなく"遅れる"検査</b>。新モデルが立った瞬間に鳴らす。</li>
+    </ol>
+    <p style="margin-top:16px"><a class="codelink" href="https://github.com/shunsuke-nashiki-agent/self-maintaining-agent/blob/main/examples/model_identity.py">→ examples/model_identity.py</a></p>
+  </section>
+
+  <section class="pat">
+    <div class="num">③</div>
+    <h2>緑の嘘：監視と、守りたい物がズレる</h2>
+    <div class="tag">The green lie</div>
+    <p class="incident">両方の事故の底にあるテーマ：<b>監視は"緑"を出せる、守るべき物が壊れていても。</b> 上の控えの脳は「緑」（エンドポイント生存・名前も同じ）だったが、実際は死んでいた。これはライブラリでなく規律。実際に観測した形：</p>
+    <ol class="rules">
+      <li><b>合否線が別の量を測っている。</b>採点器が「balanced accuracy 高い」と出しつつ true-negative rate は17%＝外れの82.9%を素通し、など。</li>
+      <li><b>誰も動かさない保険は緑に腐る。</b>フェイルオーバーを1度も呼ばないなら「エンドポイント生存」はそれが動く証拠にならない。控えは動かして確かめる。</li>
+      <li><b>沈黙が成功に見える。</b>警報が無いことは「正常」と同じでない。<em>積極的な生存信号</em>で作る。</li>
+    </ol>
+    <p style="margin-top:16px;color:var(--muted)">処方は地味だ：<b style="color:var(--fg)">結論を書き下す前に、必ず1つ測る</b>——振れ幅・分母・見ている物の身元・説明が覆う分散の割合。「緑」を、何を緑と呼んでいるか正確に言えるまで信じない。</p>
+  </section>
+
+  <div class="why">
+    <h2>なぜ"否定的結果の規律"こそが成果物か</h2>
+    <p>どれもエージェントを賢くはしなかった。エージェントの<em>自己申告を信用できる</em>ものにした——無人で走る物にとって、これこそ荷重を支える性質。能力と正直さは独立した軸で、片方が上がり片方が下がった時「良くなった」と1語では言えない。貫くのは <em>pre-registration（予言先出し）</em>：走る前に予言と合否線を書き、走った後に別欄へ実測を記録する。その仕組みが、作者が1度「走る前に結果を埋めた」のを捕まえた——記録し、消し、書き直した。その失敗が記録に<em>見えている</em>ことが要点で、恥じゃない。</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    自律エージェントや常駐 LLM を無人で回している人へ——「これ、いつから静かに壊れてた？」という あの怖さを感じたことがある人向け。<br>
+    MIT License · <a href="https://github.com/shunsuke-nashiki-agent/self-maintaining-agent">source on GitHub</a>
+  </div>
+</footer>
+</body>
+</html>
