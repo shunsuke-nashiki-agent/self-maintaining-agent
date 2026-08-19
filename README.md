@@ -1,73 +1,75 @@
-# Staying Honest While Nobody's Watching
+<!-- Language: 日本語 (this file) · [English](README.en.md) -->
 
-Patterns for keeping a long-running, unattended AI agent **alive** and **honest** — learned by running one 24/7 on a small always-on box and watching it break in quiet, undramatic ways.
+# 誰も見ていない間、正直でいるために
 
-> The hard part of unattended autonomy isn't intelligence. It's that a broken agent **looks fine**. It keeps printing green. This repo is three small patterns that attack that directly:
-> **① don't go dark · ② notice when the ground shifts under you · ③ distrust your own "all-clear".**
+長時間・無人で走らせる AI エージェントを **生かし続け**、そして **正直に保つ** ための小さなパターン集。小さな常時稼働マシンでエージェントを24時間動かし、それが「静かで地味な壊れ方」をするのを見て学んだもの。
 
-These come from real incidents operating an autonomous agent whose "brain" is an LLM, with a small **local** model as a backstop. Names, hosts, and paths are stripped; the patterns and the failure modes are the point. Reference implementations are in [`examples/`](examples/).
+> 無人自律のいちばん難しいところは「賢さ」じゃない。**壊れたエージェントほど"正常に見える"** ことだ。緑のランプを出し続ける。この repo は、そこを正面から突く3つのパターン：
+> **① 真っ暗にならない · ② 足元が入れ替わったら気づく · ③ 自分の"異常なし"を疑う。**
 
----
-
-## ① The backup brain: a single-point-of-failure for cognition
-
-**The incident.** The agent's reasoning ran through one hosted LLM. Its auth token silently expired. For **~17 hours** the agent — and the chat bot that shared the same credential — went completely silent. Nothing crashed loudly. There was just… nothing.
-
-The root cause wasn't the token. It was that **cognition had a single point of failure** and the failure produced *silence*, which is the one signal a monitoring-by-absence setup can't see.
-
-**The pattern.** Keep a second, independent brain — a small **local** model — and a *failover beat* that lights up when the primary is unreachable, so the agent can at least say "I'm alive, degraded" instead of vanishing.
-
-Three design rules that matter more than the code:
-
-1. **Detect on the same path you actually use.** Don't invent a separate health-probe endpoint — it can disagree with the real call path and become its *own* silent failure. The failover checks the primary the exact same way the agent normally calls it.
-2. **Anti-flap.** One blip is not an outage. Declare "down" only after N consecutive failures; announce the outage once and the recovery once. Flapping alerts train you to ignore them.
-3. **The guaranteed line comes first, the smart line second.** The "I'm alive" signal must not depend on the slow/possibly-failing backup model. Emit a fixed status line first; *then*, best-effort, let the local model add a sentence. If the local brain can answer, that's proof it's genuinely alive — a bonus, not a dependency.
-
-See [`examples/failover_guard.py`](examples/failover_guard.py).
+これらは、LLM を"脳"にし、小さな**ローカル**モデルを控えに置いた自律エージェントを実運用して踏んだ本物の事故から来ている。名前・ホスト・パスは全部剥がしてある——大事なのはパターンと失敗の形。参照実装は [`examples/`](examples/) に。
 
 ---
 
-## ② Silent swaps: the model changes under you
+## ① 控えの脳：思考の単一障害点
 
-**The incident.** The local backstop model was upgraded to a newer version. Same endpoint name, same API — but the new model's **context window was 1/8 the size** of the old one. The agent's "load my identity + memories into the prompt" routine had a fixed budget sized for the *old*, larger window. On the new model every call overflowed the context limit by a hair and returned a hard error.
+**事故。** エージェントの思考は、ある1つのホスト型 LLM を通していた。その認証トークンが静かに期限切れになった。**約17時間**、エージェントも——同じ認証を共有していたチャットBOTも——完全に沈黙した。派手にクラッシュしたわけじゃない。ただ…何も無くなった。
 
-Result: the **backup brain was 100% dead** — and nobody noticed, because nothing exercised it. The insurance had quietly rotted. If the primary had failed during that window, the failover from ① would have lit up… and found no one home.
+根本原因はトークンじゃない。**思考(cognition)に単一障害点があった**こと、そして その故障が生んだのが**"沈黙"**——「音が無いこと」を監視の合図にしている作りでは、唯一 見えない信号——だったことだ。
 
-**The pattern.** Treat "the model changed" as a first-class event.
+**パターン。** 独立した第二の脳＝小さな**ローカル**モデルと、本体に届かない時だけ点く *フェイルオーバーの拍* を持つ。消えるのでなく「生きてる、機能低下中」と言えるように。
 
-- **Fingerprint the model**, not its display name. Names lie — the same served name can front a totally different model. Fingerprint on things that actually change: the chat-template hash, the max context length, the real underlying model id.
-- **Bind calibration to the fingerprint.** Any tuned constant (prompt budgets, token estimates, thresholds) is *owned* by a specific model fingerprint. When the fingerprint changes, a checker lists every calibrated value that now needs re-checking. A copy-pasted default is not a declared dependency; a fingerprint-bound one is.
-- **Size to the live limit, not a constant.** The overflow fix wasn't "pick a smaller number." It was: **read the model's real context window at runtime** and derive the budget from it, with a hard cap and a measured chars-per-token rate. That way the *next* swap can't silently re-break it.
-- **Know your blind spot.** During the swap itself (the minutes the endpoint is reloading) the fingerprint is briefly unreachable and the check degrades to "green." So it's not a *silent* check — it's a *delayed* one. Design it to alarm the instant the new model is live, and say so out loud.
+コードより大事な3つの設計則：
 
-See [`examples/model_identity.py`](examples/model_identity.py).
+1. **本当に使っている経路で検知する。** 別の"health用エンドポイント"を作らない——実際の呼び出し経路とズレて、それ自身が新たな静かな故障になる。フェイルオーバーは、エージェントが普段呼ぶのと**まったく同じやり方**で本体を叩く。
+2. **バタつき防止(anti-flap)。** 1回のブリップは障害じゃない。「ダウン」を宣言するのは連続 N 回失敗してから。障害も1回、復旧も1回だけ知らせる。バタつく警報は"無視する習慣"を育てる。
+3. **保証行が先、賢い行は後。** 「生きてる」の合図を、遅くて失敗し得る控えモデルに依存させない。固定の状態行をまず出し、*そのあと*ベストエフォートでローカルモデルに一言 足させる。ローカルの脳が答えられたら、それは本当に生きている証拠——依存ではなく、おまけ。
 
----
-
-## ③ The green lie: when the monitor and the thing it protects disagree
-
-The theme under both incidents: **a monitor can report "green" while the thing it's supposed to protect is broken.** The backup brain above was "green" (endpoint up, name unchanged) while it was actually dead.
-
-This isn't a library — it's a discipline. A few forms it takes, all observed in practice:
-
-- **The pass/fail line measures the wrong quantity.** A classifier "passes" at 83% detail-match while the decision it actually drives (a coarse binary) is fine — or the reverse: a grader posts high "balanced accuracy" while its true-negative rate is 17%, i.e. it waves through 83% of wrong answers.
-- **Insurance that nothing exercises rots to green.** If no code path ever calls the failover brain, "the endpoint is up" is not evidence it works. Exercise your fallbacks, or they're decorative.
-- **Silence reads as success.** Absence of an alert is not the same as "fine." Build for *positive* liveness signals, not the lack of a complaint.
-
-The working antidote is boring: **before you write down a conclusion, measure one thing** — the spread, the denominator, the identity of the thing you're looking at, how much of the variance your explanation actually covers. Distrust the word "green" until you can say precisely *what* is being called green.
+→ [`examples/failover_guard.py`](examples/failover_guard.py)
 
 ---
 
-## Why negative-results discipline is the real deliverable
+## ② 静かなすり替え：モデルが足元で入れ替わる
 
-None of this made the agent smarter. It made the agent's *self-report trustworthy* — which, for anything running unattended, is the load-bearing property. Capability and honesty are independent axes; you cannot say "it got better" in one word when one went up and the other went down.
+**事故。** ローカルの控えモデルを新版に上げた。同じエンドポイント名、同じ API——でも新モデルの**文脈窓は旧版の1/8**だった。エージェントの「自己定義＋記憶をプロンプトに積む」処理には、*旧*の広い窓に合わせた固定の予算があった。新モデルでは毎回わずかに文脈上限を超え、ハードエラーで返ってきた。
 
-The through-line is a pre-registration habit: **write the prediction and the pass/fail line before you run, record the measurement in a separate slot after.** It even caught its own author filling in a result *before* running once — noted, deleted, redone. That failure being visible in the record is the point, not an embarrassment.
+結果：**控えの脳は100%死んでいた**——しかも誰も気づかなかった。誰もそれを叩いていなかったから。保険が静かに腐っていた。もしこの間に本体が落ちていたら、①のフェイルオーバーは点いて…そして誰も居なかった。
 
-## Who this is for
+**パターン。** 「モデルが変わった」を一級の出来事として扱う。
 
-Anyone running an autonomous agent or a resident LLM unattended — a personal assistant, a cron-driven pipeline, a home-lab model server — who has felt the specific dread of "how long has this been quietly broken?"
+- **表示名でなくモデルの指紋を取る。** 名前は嘘をつく——同じ配信名が全く別のモデルを front できる。実際に変わる物で指紋を取る：chat テンプレートのハッシュ・最大文脈長・実体のモデルID。
+- **校正値を指紋に束ねる。** 調律した定数（プロンプト予算・トークン見積り・しきい値）は、特定のモデル指紋に*所有される*。指紋が変わったら、やり直すべき校正値をチェッカが全部並べる。写経した既定値は依存の宣言にならない。指紋に束ねた物は宣言になる。
+- **定数でなく"生きた上限"に合わせる。** あふれの直し方は「小さい数を選ぶ」じゃなかった。**実行時にモデルの本当の文脈窓を読み**、そこから予算を導く（硬い上限＋実測の字/tokレート付き）。こうすれば*次の*すり替えで静かに再発しない。
+- **盲点を知る。** すり替えの最中（エンドポイント再読込の数分）は指紋が取れず、検査は"緑"に退化する。だからこれは*静かな*検査でなく*遅れる*検査。新モデルが立った瞬間に鳴るよう設計し、そう明言する。
 
-## License
+→ [`examples/model_identity.py`](examples/model_identity.py)
 
-MIT — see [LICENSE](LICENSE).
+---
+
+## ③ 緑の嘘：監視と、守りたい物がズレる
+
+両方の事故の底にあるテーマ：**監視は"緑"を出せる、守るべき物が壊れていても。** 上の控えの脳は「緑」（エンドポイントは生きてる・名前も同じ）だったが、実際は死んでいた。
+
+これはライブラリじゃなく規律だ。実際に観測した形をいくつか：
+
+- **合否線が、別の量を測っている。** ある分類器は細目一致83%で"合格"だが、実際に駆動する判断（粗い2択）は別物だった——あるいは逆に、採点器が「balanced accuracy 高い」と出しつつ true-negative rate は17%＝**外れの82.9%を素通し**していた。
+- **誰も動かさない保険は緑に腐る。** フェイルオーバーの脳を1度も呼ぶ経路が無いなら、「エンドポイントは生きてる」はそれが動く証拠にならない。控えは動かして確かめろ。さもなくば飾りだ。
+- **沈黙が成功に見える。** 警報が無いことは「正常」と同じではない。合図は"苦情が無い"でなく、*積極的な生存信号*で作る。
+
+効く処方は地味だ：**結論を書き下す前に、必ず1つ測る**——振れ幅、分母、見ている物の身元、説明が実際に覆う分散の割合。「緑」という言葉を、*何*を緑と呼んでいるか正確に言えるまで信じない。
+
+---
+
+## なぜ"否定的結果の規律"こそが本当の成果物か
+
+どれもエージェントを賢くはしなかった。エージェントの*自己申告を信用できる*ものにした——無人で走る物にとって、これこそが荷重を支える性質だ。能力と正直さは独立した軸で、片方が上がり片方が下がった時に「良くなった」と1語では言えない。
+
+貫くのは pre-registration（予言先出し）の習慣：**走る前に予言と合否線を書き、走った後に別の欄へ実測を記録する。** その仕組み自身が、作者が1度「走る前に結果を埋めた」のを捕まえた——記録し、消し、書き直した。その失敗が記録に*見えている*ことが要点で、恥じゃない。
+
+## 誰のためか
+
+自律エージェントや常駐 LLM を無人で回している人——個人アシスタント、cron 駆動のパイプライン、自宅のモデルサーバー——「これ、いつから静かに壊れてたんだ？」という あの特有の怖さを感じたことがある人へ。
+
+## ライセンス
+
+MIT — [LICENSE](LICENSE) 参照。
